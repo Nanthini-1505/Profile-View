@@ -15,34 +15,6 @@ const resetTokens = new Map();
 /* ===============================
    REGISTER
 ================================ */
-// router.post("/register", async (req, res) => {
-//   const { name, email, password, phone, role, college, company } = req.body;
-
-//   try {
-//     const existing = await User.findOne({ email });
-//     if (existing) {
-//       return res.status(400).json({ message: "Email already exists" });
-//     }
-
-//     const hashedPassword = await bcrypt.hash(password, 10);
-
-//     const newUser = new User({
-//       name,
-//       email,
-//       password: hashedPassword,
-//       phone: phone?.trim() || "",
-//       role,
-//       college: role === "college" ? college : "",
-//       company: role === "hr" ? company : "",
-//     });
-
-//     await newUser.save();
-//     res.status(201).json({ message: "User registered successfully" });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
 
 // 🔹 Register Route
 router.post("/register", async (req, res) => {
@@ -53,11 +25,9 @@ router.post("/register", async (req, res) => {
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: "Name, email, password, and role are required" });
     }
-
     if (role.toLowerCase() === "college" && !college) {
       return res.status(400).json({ message: "College name is required for role 'College'" });
     }
-
     if (role.toLowerCase() === "hr" && !company) {
       return res.status(400).json({ message: "Company name is required for role 'HR'" });
     }
@@ -65,23 +35,37 @@ router.post("/register", async (req, res) => {
     // 2️⃣ Check duplicate email
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      if (role.toLowerCase() === "hr" && existingUser.role === "HR") {
-        return res.status(400).json({ message: "This HR email is already registered. Please login first." });
-      }
-      if (role.toLowerCase() === "college" && existingUser.role === "College") {
-        return res.status(400).json({ message: "This College email is already registered. Please login first." });
-      }
-      // Optional: allow same email for different role if needed
+      return res.status(400).json({ message: "This email is already registered. Please login." });
     }
 
-    // 3️⃣ HR Email Validation (company domain/subdomain only)
+    // 3️⃣ HR Email Validation
     if (role.toLowerCase() === "hr" && company) {
-      const emailDomain = email.split("@")[1].toLowerCase();
-      const companyWords = company.toLowerCase().split(/\s+/);
+      const [localPart, domain] = email.toLowerCase().split("@");
 
-      const match = companyWords.some(word => emailDomain.includes(word));
-      if (!match) {
-        return res.status(400).json({ message: "Email must be a valid company domain or subdomain" });
+      // Split domain into parts (for subdomain check)
+      const domainParts = domain.split(".");
+
+      // Extract company keywords (ignore short words < 3 letters)
+      const companyWords = company
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, "")
+        .split(/\s+/)
+        .filter(w => w.length > 2);
+
+      // 1. Check if domain or any subdomain part contains company word
+      const domainMatch = companyWords.some(word =>
+        domain.includes(word) || domainParts.some(part => part.includes(word))
+      );
+
+      // 2. Check if localPart contains company word (for gmail/outlook cases)
+      const localMatch = companyWords.some(word => localPart.includes(word));
+
+      // ✅ Allow if either domain/subdomain OR localPart matches
+      if (!domainMatch && !localMatch) {
+        return res.status(400).json({
+          message:
+            "HR email must contain at least one word from company name (in local-part, domain, or subdomain)."
+        });
       }
     }
 
@@ -93,13 +77,13 @@ router.post("/register", async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role: role === "hr" ? "HR" : "College",
+      role: role.toLowerCase() === "hr" ? "HR" : "College",
       phone,
       address,
       state,
       district,
-      company: role === "hr" ? company : null,
-      college: role === "college" ? college : null,
+      company: role.toLowerCase() === "hr" ? company : null,
+      college: role.toLowerCase() === "college" ? college : null,
     });
 
     await newUser.save();
@@ -111,6 +95,8 @@ router.post("/register", async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 });
+
+
 // LOGIN ROUTE
 // backend/routes/authRoutes.js
 // backend/routes/authRoutes.js
